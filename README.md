@@ -51,7 +51,10 @@ Hanwha BNCP 이라크 현장 주간 보안 보고서(Weekly Security Report)를 
 ```
 WEEK-1/
 ├── weekly_report_generator.py   # 메인 실행 파일 (v3.0)
+├── requirements.txt             # Python 패키지 목록 (pip freeze)
 ├── weekly_report_config.json    # 설정 파일 (API 키, 차량 마일리지) ※ .gitignore 처리
+├── .env                         # 환경 변수 파일 ※ .gitignore 처리
+├── venv/                        # Python 가상환경 ※ .gitignore 처리
 ├── .gitignore                   # Git 업로드 제외 목록
 └── README.md                    # 프로젝트 설명서 (현재 파일)
 ```
@@ -64,12 +67,40 @@ WEEK-1/
 
 ## 🚀 실행 방법
 
-### 1. 필수 패키지 설치
+### 1. 가상환경 설정 (최초 1회)
+
+#### 가상환경 생성
 ```bash
-pip install anthropic
+cd C:\Users\user\Documents\WEEK-1
+python -m venv venv
 ```
 
-### 2. 프로그램 실행
+#### 가상환경 활성화 (PowerShell)
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+> ⚠️ 보안 오류 발생 시 먼저 실행:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```
+
+활성화 성공 시 터미널 앞에 `(venv)` 표시됨:
+```
+(venv) PS C:\Users\user\Documents\WEEK-1>
+```
+
+#### 가상환경 비활성화 (나가기)
+```bash
+deactivate
+```
+
+### 2. 필수 패키지 설치 (가상환경 활성화 상태에서)
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 프로그램 실행
 ```bash
 python weekly_report_generator.py
 ```
@@ -104,6 +135,7 @@ python weekly_report_generator.py
 - [x] Claude API 연동 한→영 번역 (v3.0)
 - [x] API 키 저장/로드 기능
 - [x] GitHub 업로드
+- [x] Python 가상환경(venv) 구성 및 requirements.txt 생성
 
 ### 해결된 주요 이슈
 | 이슈 | 원인 | 해결 방법 |

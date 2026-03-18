@@ -1,5 +1,9 @@
 # API key and config (contains sensitive data)
 weekly_report_config.json
+.env
+
+# Virtual environment
+venv/
 
 # Python cache
 __pycache__/
