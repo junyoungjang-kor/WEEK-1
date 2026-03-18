@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Hanwha BNCP Weekly Security Report Generator v3.0
+Hanwha BNCP Weekly Security Report Generator v4.0
 - Claude AI API integration for Korean → English translation
+- Bullet-point (개조식) professional security report style
 - Auto-defaults (PSD H01/H02, IQD currency, personnel categorization)
 - Auto-formatting to match report template conventions
 """
@@ -44,71 +45,51 @@ VEHICLES = [
     {"plate": "19558", "assigned": "Hanwha PMT"},
 ]
 
-# ============================================================
-# KOREAN → ENGLISH TRANSLATION DICTIONARY
-# ============================================================
-KO_EN_DICT = {
-    # Personnel
-    "결근": "absent", "병가": "sick leave", "연차": "annual leave", "휴가": "leave",
-    "무급휴가": "unpaid leave", "유급휴가": "paid leave", "진료": "medical treatment",
-    "병원": "hospital", "출장": "business trip", "복귀": "return", "예정": "scheduled",
-    "재택근무": "remote work", "교대": "shift change", "보충": "replacement",
-    "대체": "replacement", "인원": "personnel", "가족": "family", "장례": "funeral",
-    "경조사": "family event", "개인사유": "personal reason",
-    # Vehicle
-    "주유": "Refuel", "급유": "Refuel", "정비": "maintenance", "차량": "vehicle",
-    "견인": "towing", "수리": "repair", "고장": "breakdown", "운행중지": "taken out of service",
-    "엔진오일": "engine oil", "타이어": "tire",
-    # Security
-    "훈련": "training", "교육": "training", "무기": "weapon", "탄약": "ammunition",
-    "경비": "guard", "가드": "guard", "경호": "escort", "순찰": "patrol",
-    "출입": "access", "통제": "control", "점검": "inspection", "확인": "confirmed",
-    # Operations
-    "철수": "evacuation", "대피": "evacuation", "항공편": "flight",
-    "민간항공편": "commercial flight", "공항": "airport", "입국": "entry",
-    "출국": "departure", "이동": "movement", "제한": "restriction",
-    # General
-    "시행": "implemented", "완료": "completed", "진행": "in progress",
-    "대기": "standby", "모니터링": "monitoring", "보고": "reported",
-    "제출": "submitted", "승인": "approved", "요청": "requested",
-    "실시": "conducted", "방문": "visited", "매카닉": "mechanic",
-    "본사": "headquarters", "사무실": "office",
-    # Time
-    "오전": "AM", "오후": "PM", "일간": "day(s)", "주간": "week(s)",
-    "월": "month", "주": "week", "일": "day",
-    # Finance
-    "지출": "expenditure", "잔액": "balance", "수령": "received",
-    "플로트": "Float", "현금": "cash",
-}
+# Translation system prompt for security report style
+TRANSLATION_SYSTEM_PROMPT = """You are a translator for a security company's weekly report at Hanwha BNCP project site in Iraq.
+Translate Korean input to professional English suitable for a formal security weekly report.
 
-# Common full phrase translations
-KO_EN_PHRASES = {
-    "한국으로 출국": "departed to Korea",
-    "한국에서 복귀": "returned from Korea",
-    "복귀 예정": "scheduled to return",
-    "병원 진료": "medical treatment at hospital",
-    "가족 장례": "family funeral ceremony",
-    "개인 사유": "personal reason",
-    "본사로 견인": "to be towed to headquarters",
-    "운행 중지": "taken out of service",
-    "차량 상태": "vehicle condition",
-    "상태가 좋지 않": "in poor condition",
-    "아무런 답변이 없": "no response has been received",
-    "사태 추이": "situation developments",
-    "철수 계획": "evacuation plan",
-    "민간항공편이 재개": "commercial flights resume",
-    "즉시 철수": "immediate evacuation",
-    "대사관": "Embassy",
-    "한국 대사관": "Korean Embassy",
-    "실장님": "Director",
-    "매니저": "Manager",
-    "드라이빙 어세스먼트": "Driving Assessment",
-}
+CRITICAL RULES:
+- Use BULLET-POINT style (개조식): short, concise phrases. NOT full sentences.
+  Example: "L1005 Ihsan Ali - absent for 3 days due to medical treatment" (NOT "L1005 Ihsan Ali was absent from work for a period of three days because he needed to receive medical treatment at a hospital.")
+- Keep person names, location names, ID numbers (L1005, RV920) EXACTLY as-is
+- Use standard security/military terminology: PSD, SSG, NSTR, AMS HQ, PMT
+- PSD teams are H01 and H02 unless stated otherwise
+- Currency is always IQD (Iraqi Dinar)
+- Dates in "DD Mon" format (e.g., "11 Mar")
+- Be concise: remove unnecessary words, keep only essential information
+- If input has bullet markers (- or ·), keep them as "- " bullets
+- Output ONLY the translated English text, no explanations or extra information
+- Do NOT add any information not present in the original text
+- For personnel status: use format "ID Name - status description"
+- For training: use format "DD Mon - Team/Group conducted [activity]"
+"""
+
+BATCH_TRANSLATION_PROMPT = """You are a translator for a security company's weekly report at Hanwha BNCP project site in Iraq.
+Translate each numbered Korean text to professional English for a formal security weekly report.
+
+CRITICAL RULES:
+- Use BULLET-POINT style (개조식): short, concise phrases. NOT full sentences.
+  Example: "L1005 Ihsan Ali - 3 days absent, medical treatment" (NOT "L1005 Ihsan Ali has been absent from his duties for three days to receive medical treatment.")
+- Keep person names, location names, ID numbers (L1005, RV920) EXACTLY as-is
+- Security terminology: PSD, SSG, NSTR, AMS HQ, PMT
+- PSD teams: H01, H02
+- Currency: IQD
+- Dates: "DD Mon" format
+- Be maximally concise
+- Keep "- " bullet formatting if present
+- Output format: [1] translated text
+[2] translated text
+...
+- Output ONLY translations with their numbers, no extra text
+- Do NOT add information not in the original
+- If a numbered item has multiple lines, translate each line and keep them under the same number separated by newlines"""
 
 
-# Global API client (initialized when API key is set)
+# Global API client
 _api_client = None
 _api_key = ""
+
 
 def init_api_client(api_key):
     """Initialize the Anthropic API client."""
@@ -124,52 +105,45 @@ def init_api_client(api_key):
         _api_client = None
         return False
 
+
+def has_korean(text):
+    """Check if text contains Korean characters."""
+    if not text or not isinstance(text, str):
+        return False
+    return any('\uac00' <= c <= '\ud7a3' for c in text)
+
+
 def translate_ko_to_en(text):
-    """Translate Korean text to English using Claude API."""
-    if not text:
+    """Translate Korean text to English using Claude API (single item)."""
+    if not text or not has_korean(text):
         return text
-    # No Korean characters → return as-is
-    if not any('\uac00' <= c <= '\ud7a3' for c in text):
-        return text
-    # If API not available, return original text with a warning marker
     if not _api_client:
         return text
-
     try:
         response = _api_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=1024,
             messages=[{"role": "user", "content": text}],
-            system="""You are a translator for a security company's weekly report at Hanwha BNCP project site in Iraq.
-Translate the Korean input to professional English suitable for a formal security weekly report.
-
-Rules:
-- Keep person names, location names, and ID numbers (like L1005) exactly as-is
-- Use security/military terminology (e.g., PSD, SSG, NSTR, AMS HQ)
-- PSD teams are always H01 and H02 unless stated otherwise
-- Currency is always IQD (Iraqi Dinar)
-- Keep dates in "DD Mon" format (e.g., "11 Mar")
-- Be concise and professional
-- If the input has "- " bullet points, keep them as "- " bullets
-- Output ONLY the translated English text, no explanations
-- Do NOT add any extra information not in the original text"""
+            system=TRANSLATION_SYSTEM_PROMPT
         )
         return response.content[0].text.strip()
     except Exception as e:
         print(f"API translation error: {e}")
-        return text  # Return original on error
+        return text
+
 
 def translate_all_fields(data_dict):
-    """Batch translate all text fields in a data dictionary to reduce API calls."""
+    """Batch translate all Korean text fields in a data dictionary.
+    Falls back to individual translation if batch fails."""
     if not _api_client:
         return data_dict
 
     # Collect all Korean texts that need translation
     texts_to_translate = []
-    text_paths = []  # Track where each text came from
+    text_paths = []
 
     def collect_texts(obj, path=""):
-        if isinstance(obj, str) and any('\uac00' <= c <= '\ud7a3' for c in obj):
+        if isinstance(obj, str) and has_korean(obj):
             texts_to_translate.append(obj)
             text_paths.append(path)
         elif isinstance(obj, dict):
@@ -184,54 +158,55 @@ def translate_all_fields(data_dict):
     if not texts_to_translate:
         return data_dict
 
-    # Batch translate in a single API call
+    # Try batch translation first
+    translations = {}
     numbered_texts = "\n".join(f"[{i+1}] {t}" for i, t in enumerate(texts_to_translate))
     try:
         response = _api_client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=4096,
             messages=[{"role": "user", "content": numbered_texts}],
-            system="""You are a translator for a security company's weekly report at Hanwha BNCP project site in Iraq.
-Translate each numbered Korean text to professional English for a formal security weekly report.
-
-Rules:
-- Keep person names, location names, ID numbers (L1005, RV920 etc.) exactly as-is
-- Use security/military terminology (PSD, SSG, NSTR, AMS HQ)
-- PSD teams are always H01 and H02 unless stated otherwise
-- Currency is always IQD (Iraqi Dinar)
-- Dates in "DD Mon" format (e.g., "11 Mar")
-- Be concise and professional
-- Keep "- " bullet formatting if present
-- Output format: [1] translated text\n[2] translated text\n...
-- Output ONLY translations with their numbers, no extra text
-- Do NOT add information not in the original"""
+            system=BATCH_TRANSLATION_PROMPT
         )
         result_text = response.content[0].text.strip()
 
-        # Parse results
-        translations = {}
+        # Parse results - handle multi-line translations per number
+        current_idx = None
+        current_lines = []
         for line in result_text.split("\n"):
             m = re.match(r'\[(\d+)\]\s*(.*)', line)
             if m:
-                idx = int(m.group(1)) - 1
-                translations[idx] = m.group(2).strip()
-
-        # Apply translations back to data
-        def apply_translations(obj, path=""):
-            if isinstance(obj, str) and path in text_paths:
-                idx = text_paths.index(path)
-                return translations.get(idx, obj)
-            elif isinstance(obj, dict):
-                return {k: apply_translations(v, f"{path}.{k}") for k, v in obj.items()}
-            elif isinstance(obj, list):
-                return [apply_translations(v, f"{path}[{i}]") for i, v in enumerate(obj)]
-            return obj
-
-        return apply_translations(data_dict)
+                # Save previous item
+                if current_idx is not None:
+                    translations[current_idx] = "\n".join(current_lines).strip()
+                current_idx = int(m.group(1)) - 1
+                current_lines = [m.group(2).strip()]
+            elif current_idx is not None:
+                current_lines.append(line)
+        # Save last item
+        if current_idx is not None:
+            translations[current_idx] = "\n".join(current_lines).strip()
 
     except Exception as e:
         print(f"Batch translation error: {e}")
-        return data_dict
+
+    # Fallback: individually translate any items that weren't in batch result
+    for i, text in enumerate(texts_to_translate):
+        if i not in translations or not translations[i]:
+            translations[i] = translate_ko_to_en(text)
+
+    # Apply translations back to data
+    def apply_translations(obj, path=""):
+        if isinstance(obj, str) and path in text_paths:
+            idx = text_paths.index(path)
+            return translations.get(idx, obj)
+        elif isinstance(obj, dict):
+            return {k: apply_translations(v, f"{path}.{k}") for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [apply_translations(v, f"{path}[{i}]") for i, v in enumerate(obj)]
+        return obj
+
+    return apply_translations(data_dict)
 
 
 def auto_format_finance(amount_str):
@@ -239,9 +214,7 @@ def auto_format_finance(amount_str):
     amount_str = amount_str.strip()
     if not amount_str:
         return ""
-    # Remove existing IQD if present
     amount_str = amount_str.replace("IQD", "").strip()
-    # Try to format as number with commas
     try:
         num = int(amount_str.replace(",", "").replace(" ", ""))
         return f"IQD {num:,}"
@@ -451,6 +424,10 @@ class XmlTemplates:
 # DOCX GENERATOR ENGINE
 # ============================================================
 class DocxGenerator:
+    """Generates .docx by modifying template XML.
+    NOTE: All translation must be done BEFORE calling generate().
+    This class does NOT translate - it only writes pre-translated data."""
+
     def __init__(self, template_path, output_dir):
         self.template_path = template_path
         self.output_dir = output_dir
@@ -486,98 +463,44 @@ class DocxGenerator:
         return output_path
 
     def _modify_header(self, content, data):
-        """Update MONTH and PERIOD using paragraph-level text replacement."""
+        """Update MONTH and PERIOD in header."""
         start = data["period_start"]
         end = data["period_end"]
         month_name = MONTHS[start.month - 1]
         month_abbr = MONTH_ABBR[start.month - 1]
 
-        # MONTH: Replace "January 2026" (or any month+year) with new value
-        # Find the exact <w:t> containing the month name
+        # MONTH: Find any "MonthName YYYY" pattern in <w:t> and replace
         for m in MONTHS:
-            old_month_text = f"<w:t>{m} {start.year - 1}</w:t>"
-            new_month_text = f"<w:t>{month_name} {start.year}</w:t>"
-            if old_month_text in content:
-                content = content.replace(old_month_text, new_month_text, 1)
-                break
-            old_month_text2 = f"<w:t>{m} {start.year}</w:t>"
-            if old_month_text2 in content:
-                content = content.replace(old_month_text2, new_month_text, 1)
-                break
+            for year in range(2024, 2031):
+                old_text = f"<w:t>{m} {year}</w:t>"
+                if old_text in content:
+                    new_text = f"<w:t>{month_name} {start.year}</w:t>"
+                    content = content.replace(old_text, new_text, 1)
+                    break
+                # Also check with xml:space preserve
+                old_text2 = f'<w:t xml:space="preserve">{m} {year}</w:t>'
+                if old_text2 in content:
+                    new_text2 = f'<w:t xml:space="preserve">{month_name} {start.year}</w:t>'
+                    content = content.replace(old_text2, new_text2, 1)
+                    break
+            else:
+                continue
+            break
 
-        # PERIOD: Find the paragraph containing "PERIOD:" and replace date values
-        period_idx = content.index("PERIOD:")
+        # PERIOD: Find paragraph containing "PERIOD:" and rebuild date portion
+        period_idx = content.find("PERIOD:")
+        if period_idx == -1:
+            return content
+
         period_p_start = content.rfind("<w:p ", 0, period_idx)
         period_p_end = content.index("</w:p>", period_idx) + 6
         period_para = content[period_p_start:period_p_end]
 
-        # Extract all <w:t> values from this paragraph
-        t_elements = list(re.finditer(r'(<w:t[^>]*>)([^<]*)(</w:t>)', period_para))
-
-        # The text sequence is: "PERIOD:", " ", "4", " ", "Mar", " ", "to ", "10", " ", "Mar", " 202", "6"
-        # We need to replace the date components
-        new_period_texts = {
-            # Find the first number (start day) - it's after "PERIOD:" and spaces
-            # Find "to " - marks the boundary between start and end dates
-        }
-
-        # Rebuild paragraph with new dates
-        found_period = False
-        date_parts_start = []  # indices of t_elements for start date
-        date_parts_end = []    # indices of t_elements for end date
-        found_to = False
-        found_year = False
-
-        for i, m in enumerate(t_elements):
-            txt = m.group(2)
-            if "PERIOD:" in txt:
-                found_period = True
-                continue
-            if not found_period:
-                continue
-            if "to" in txt:
-                found_to = True
-                continue
-            if not found_to:
-                date_parts_start.append(i)
-            else:
-                date_parts_end.append(i)
-
-        # Now replace: rebuild the entire paragraph with correct dates
-        # Simpler approach: replace specific text patterns within the paragraph
-        new_para = period_para
-
-        # Replace year (might be split as " 202" + "6")
-        new_para = re.sub(r'(<w:t[^>]*>)\s*\d{3,4}(</w:t>)', f'\\1 {start.year}\\2', new_para, count=0)
-
-        # Remove stray single-digit year fragments
-        # Better approach: rebuild the date text completely
-        # Find all <w:t> elements and their positions, then replace the date parts
-
-        # Actually, let's use a cleaner approach:
-        # 1. Find the PERIOD paragraph
-        # 2. Remove all runs after "PERIOD:" except the first space
-        # 3. Insert a single run with the complete period text
-
-        # Find the run containing "PERIOD:"
+        # Find the run containing "PERIOD:" and keep everything up to its closing </w:r>
         period_run_end = period_para.index("PERIOD:")
         period_run_end = period_para.index("</w:r>", period_run_end) + 6
 
-        # Get the formatting from the next run for styling
-        next_run = re.search(r'<w:r[^>]*>(.*?)</w:r>', period_para[period_run_end:], re.DOTALL)
-        if next_run:
-            rpr_match = re.search(r'<w:rPr>.*?</w:rPr>', next_run.group(1), re.DOTALL)
-            rpr = rpr_match.group() if rpr_match else ""
-        else:
-            rpr = '<w:rPr><w:rFonts w:cs="Calibri"/><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>'
-
-        # Get the paragraph closing
-        ppr_end = period_para.index("</w:pPr>") + 8 if "</w:pPr>" in period_para else 0
-
-        # Build new paragraph: keep pPr + PERIOD run + new date run
-        p_open_end = period_para.index(">", period_p_start - period_p_start) + 1  # This won't work, let me simplify
-
-        # Simplest: just keep everything up to and including the PERIOD: run, then add a new run with the full date
+        # Keep paragraph up to end of PERIOD: run, then add single new run with date text
         before_period_runs = period_para[:period_run_end]
         date_text = f" {start.day} {month_abbr} to {end.day} {MONTH_ABBR[end.month-1]} {end.year}"
         new_run = f'<w:r><w:rPr><w:rFonts w:cs="Calibri"/><w:b/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr><w:t>{date_text}</w:t></w:r>'
@@ -587,6 +510,7 @@ class DocxGenerator:
         return content
 
     def _modify_weekly_summary(self, content, data):
+        """Build weekly summary section - NO translation here, data is pre-translated."""
         start = data["period_start"]
         shifts = data.get("shift_changes", [])
         daily_extras = data.get("daily_extras", {})
@@ -624,9 +548,14 @@ class DocxGenerator:
             paragraphs.append(XmlTemplates.day_header(day_num, day_abbr, weekday))
             paragraphs.append(XmlTemplates.bullet_item("Daily check - PSD & Static Guard: NSTR", num_id))
 
-            # Shift changes
+            # Shift changes - compare full date (year, month, day), not just day number
             for sc in shifts:
-                if sc["date"] == day_date.day:
+                sc_date = sc.get("full_date")
+                if sc_date and sc_date == day_date:
+                    paragraphs.append(XmlTemplates.bullet_item(
+                        f"SSG shift change completed (Shift #{sc['shift']})", num_id))
+                elif not sc_date and sc.get("date") == day_date.day:
+                    # Fallback: compare day only (backward compatibility)
                     paragraphs.append(XmlTemplates.bullet_item(
                         f"SSG shift change completed (Shift #{sc['shift']})", num_id))
 
@@ -637,13 +566,12 @@ class DocxGenerator:
             elif day_date.weekday() == 1:  # Tuesday
                 paragraphs.append(XmlTemplates.bullet_item("Submitted Weekly Mileage & Weekly Security Report to AMS HQ", num_id))
 
-            # Extra items (translated to English)
+            # Extra items - already translated, just write directly
             day_key = str(day_date.day)
             if day_key in daily_extras and daily_extras[day_key].strip():
                 for line in daily_extras[day_key].strip().split("\n"):
                     if line.strip():
-                        translated = translate_ko_to_en(line.strip())
-                        paragraphs.append(XmlTemplates.bullet_item(translated, num_id))
+                        paragraphs.append(XmlTemplates.bullet_item(line.strip(), num_id))
 
         new_tc = tc_header + "\n" + "\n".join(paragraphs) + "\n</w:tc>"
         new_row = row_xml[:tc_start] + new_tc + row_xml[tc_end:]
@@ -652,6 +580,7 @@ class DocxGenerator:
         return content
 
     def _modify_training(self, content, data):
+        """Modify training table - data is pre-translated."""
         training = data.get("training", {})
         marker_idx = content.index("TRAINING")
         tbl_start = content.index("<w:tbl>", marker_idx)
@@ -687,7 +616,7 @@ class DocxGenerator:
                 paras = []
                 for line in entries.split("\n"):
                     if line.strip():
-                        paras.append(XmlTemplates.training_cell_para(translate_ko_to_en(line.strip())))
+                        paras.append(XmlTemplates.training_cell_para(line.strip()))
                 new_tc = f"<w:tc>{tcpr}{''.join(paras)}</w:tc>"
             else:
                 new_tc = f"<w:tc>{tcpr}{XmlTemplates.training_cell_para('N/A')}</w:tc>"
@@ -699,12 +628,25 @@ class DocxGenerator:
         return content
 
     def _modify_issues(self, content, data):
+        """Modify issues table - data is pre-translated."""
         issues = data.get("issues", [])
-        marker_idx = content.index("Issues")
-        check_area = content[max(0, marker_idx-200):marker_idx]
+
+        # Safe search for "Issues" marker near "5.1"
+        marker_idx = content.find("Issues")
+        if marker_idx == -1:
+            return content
+
+        check_area = content[max(0, marker_idx - 200):marker_idx]
         if "5.1" not in check_area:
-            marker_idx = content.index("Issues", marker_idx + 1)
-        tbl_start = content.index("<w:tbl>", marker_idx)
+            next_idx = content.find("Issues", marker_idx + 1)
+            if next_idx == -1:
+                return content  # Cannot find proper Issues section, skip safely
+            marker_idx = next_idx
+
+        tbl_start = content.find("<w:tbl>", marker_idx)
+        if tbl_start == -1:
+            return content
+
         tbl_end = content.index("</w:tbl>", tbl_start) + 8
         table_xml = content[tbl_start:tbl_end]
 
@@ -717,9 +659,9 @@ class DocxGenerator:
         if issues:
             for iss in issues:
                 new_rows.append(XmlTemplates.issues_row(
-                    translate_ko_to_en(iss.get("issue", "")),
-                    translate_ko_to_en(iss.get("summary", "")),
-                    translate_ko_to_en(iss.get("actions", ""))
+                    iss.get("issue", ""),
+                    iss.get("summary", ""),
+                    iss.get("actions", "")
                 ))
         new_rows.append(XmlTemplates.issues_empty_row())
 
@@ -729,6 +671,7 @@ class DocxGenerator:
         return content
 
     def _modify_mileage(self, content, data):
+        """Modify vehicle mileage table."""
         mileage = data.get("mileage", {})
         for plate, values in mileage.items():
             if not values.get("current"):
@@ -741,7 +684,8 @@ class DocxGenerator:
             tr_end = content.index("</w:tr>", idx) + 7
             row_xml = content[tr_start:tr_end]
 
-            tcs = list(re.finditer(r'<w:tc>.*?</w:tc>', row_xml, re.DOTALL))
+            # Use more robust tc matching (handles both <w:tc> and <w:tc ...>)
+            tcs = list(re.finditer(r'<w:tc[ >].*?</w:tc>', row_xml, re.DOTALL))
             if len(tcs) < 4:
                 continue
 
@@ -750,14 +694,14 @@ class DocxGenerator:
                 old_tc = tcs[1].group()
                 new_tc = re.sub(r'<w:t[^>]*>[^<]*</w:t>', f'<w:t>{values["current"]}</w:t>', old_tc, count=1)
                 row_xml = row_xml[:tcs[1].start()] + new_tc + row_xml[tcs[1].end():]
-                tcs = list(re.finditer(r'<w:tc>.*?</w:tc>', row_xml, re.DOTALL))
+                tcs = list(re.finditer(r'<w:tc[ >].*?</w:tc>', row_xml, re.DOTALL))
 
             # Next Service (col 3)
             if values.get("next_service") and len(tcs) >= 3:
                 old_tc = tcs[2].group()
                 new_tc = re.sub(r'<w:t[^>]*>[^<]*</w:t>', f'<w:t>{values["next_service"]}</w:t>', old_tc)
                 row_xml = row_xml[:tcs[2].start()] + new_tc + row_xml[tcs[2].end():]
-                tcs = list(re.finditer(r'<w:tc>.*?</w:tc>', row_xml, re.DOTALL))
+                tcs = list(re.finditer(r'<w:tc[ >].*?</w:tc>', row_xml, re.DOTALL))
 
             # Comments (col 4)
             if values.get("comments") and len(tcs) >= 4:
@@ -769,9 +713,24 @@ class DocxGenerator:
         return content
 
     def _modify_finance(self, content, data):
+        """Modify finance table - data is pre-translated."""
         finance = data.get("finance", [])
-        marker_idx = content.index("5.8 Finance")
-        tbl_start = content.index("<w:tbl>", marker_idx)
+
+        # Safe search for finance marker
+        marker_idx = content.find("5.8 Finance")
+        if marker_idx == -1:
+            # Try split version: "5.8" near "Finance"
+            marker_idx = content.find("Finance")
+            if marker_idx == -1:
+                return content
+            check_area = content[max(0, marker_idx - 100):marker_idx]
+            if "5.8" not in check_area:
+                return content
+
+        tbl_start = content.find("<w:tbl>", marker_idx)
+        if tbl_start == -1:
+            return content
+
         tbl_end = content.index("</w:tbl>", tbl_start) + 8
         table_xml = content[tbl_start:tbl_end]
 
@@ -785,7 +744,7 @@ class DocxGenerator:
             for fin in finance:
                 new_rows.append(XmlTemplates.finance_row(
                     fin.get("date", ""), fin.get("pr_number", ""),
-                    translate_ko_to_en(fin.get("description", "")),
+                    fin.get("description", ""),
                     auto_format_finance(fin.get("amount", "")),
                     auto_format_finance(fin.get("balance", ""))
                 ))
@@ -797,9 +756,19 @@ class DocxGenerator:
         return content
 
     def _modify_client_feedback(self, content, data):
+        """Modify client feedback table - data is pre-translated."""
         feedback = data.get("client_feedback", [])
-        marker_idx = content.index("6. Client Feedback")
-        tbl_start = content.index("<w:tbl>", marker_idx)
+
+        marker_idx = content.find("6. Client Feedback")
+        if marker_idx == -1:
+            marker_idx = content.find("Client Feedback")
+            if marker_idx == -1:
+                return content
+
+        tbl_start = content.find("<w:tbl>", marker_idx)
+        if tbl_start == -1:
+            return content
+
         tbl_end = content.index("</w:tbl>", tbl_start) + 8
         table_xml = content[tbl_start:tbl_end]
 
@@ -811,10 +780,10 @@ class DocxGenerator:
         new_rows = [header_row]
         if feedback:
             for fb in feedback:
-                summary_lines = [translate_ko_to_en(l.strip()) for l in fb.get("summary", "").split("\n") if l.strip()]
-                actions_lines = [translate_ko_to_en(l.strip()) for l in fb.get("actions", "").split("\n") if l.strip()]
+                summary_lines = [l.strip() for l in fb.get("summary", "").split("\n") if l.strip()]
+                actions_lines = [l.strip() for l in fb.get("actions", "").split("\n") if l.strip()]
                 new_rows.append(XmlTemplates.client_feedback_row(
-                    translate_ko_to_en(fb.get("issue", "")),
+                    fb.get("issue", ""),
                     summary_lines if summary_lines else [""],
                     actions_lines if actions_lines else [""]
                 ))
@@ -840,7 +809,7 @@ class DocxGenerator:
 class WeeklyReportApp:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("Hanwha BNCP Weekly Report Generator v3.0")
+        self.root.title("Hanwha BNCP Weekly Report Generator v4.0")
         self.root.geometry("950x800")
         self.config = ConfigManager()
         self.generator = DocxGenerator(TEMPLATE_PATH, OUTPUT_DIR)
@@ -859,7 +828,7 @@ class WeeklyReportApp:
         main.pack(fill=tk.BOTH, expand=True)
 
         # API Key bar at top
-        api_frame = ttk.LabelFrame(main, text="Claude API (Korean → English auto-translation)", padding=5)
+        api_frame = ttk.LabelFrame(main, text="Claude API (한국어 → 영어 자동 번역)", padding=5)
         api_frame.pack(fill=tk.X, pady=(0, 5))
 
         api_row = ttk.Frame(api_frame)
@@ -899,14 +868,13 @@ class WeeklyReportApp:
             return
         success = init_api_client(key)
         if success:
-            # Quick test
             try:
-                test = translate_ko_to_en("테스트")
+                test = translate_ko_to_en("보안 점검 완료")
                 self.config.set("api_key", key)
                 self.config.save()
                 self.api_status.config(text="● Connected", foreground="green")
                 self.status_var.set("Ready (AI Translation ON)")
-                messagebox.showinfo("Success", f"API connected! Test: '테스트' → '{test}'")
+                messagebox.showinfo("Success", f"API connected!\n\nTest: '보안 점검 완료' → '{test}'")
             except Exception as e:
                 self.api_status.config(text="● Error", foreground="red")
                 messagebox.showerror("Error", f"API test failed: {e}")
@@ -953,7 +921,7 @@ class WeeklyReportApp:
             self.shift_entries.append((dv, sv))
 
         # Daily extras
-        df = ttk.LabelFrame(tab, text="Daily Events (routine auto-filled, add extras only - Korean OK, auto-translated)", padding=10)
+        df = ttk.LabelFrame(tab, text="Daily Events (한국어 입력 → 영어 자동 번역, 개조식 변환)", padding=10)
         df.pack(fill=tk.BOTH, expand=True, pady=3)
 
         canvas = tk.Canvas(df)
@@ -1006,7 +974,7 @@ class WeeklyReportApp:
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text="Training")
 
-        ttk.Label(tab, text="Enter training per category. Default PSD: H01, H02.\nFormat: - [Date] : [Group] ([Topic])",
+        ttk.Label(tab, text="한국어 입력 가능 → 자동 영어 번역\n형식 예: 3월 21일 psd 2개팀 드라이빙 어세스먼트 실시",
                   font=("Calibri", 9)).pack(anchor=tk.W, pady=5)
 
         self.training_texts = {}
@@ -1018,13 +986,13 @@ class WeeklyReportApp:
             txt.insert("1.0", "N/A")
             self.training_texts[label] = txt
 
-    # ---- Tab 3: Issues + Client Feedback (combined) ----
+    # ---- Tab 3: Issues + Client Feedback ----
     def _build_tab_issues_feedback(self):
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text="Issues / Client Feedback")
 
         # 5.1 Issues
-        lf1 = ttk.LabelFrame(tab, text="5.1 Issues (Korean OK - auto-translated to English)", padding=5)
+        lf1 = ttk.LabelFrame(tab, text="5.1 Issues (한국어 입력 → 영어 자동 번역)", padding=5)
         lf1.pack(fill=tk.BOTH, expand=True, pady=3)
 
         self.issues_tree = ttk.Treeview(lf1, columns=("issue", "summary", "actions"), show="headings", height=3)
@@ -1040,11 +1008,11 @@ class WeeklyReportApp:
         ttk.Button(bf1, text="+ Add", command=self._add_issue).pack(side=tk.LEFT, padx=2)
         ttk.Button(bf1, text="- Remove", command=lambda: self._del_item(self.issues_tree)).pack(side=tk.LEFT, padx=2)
 
-        # 6. Client Feedback - FREE TEXT input
-        lf2 = ttk.LabelFrame(tab, text="6. Client Feedback (Free text - auto-structured into Issue/Summary/Actions)", padding=5)
+        # 6. Client Feedback
+        lf2 = ttk.LabelFrame(tab, text="6. Client Feedback (자유 텍스트 → Issue/Summary/Actions 자동 구조화)", padding=5)
         lf2.pack(fill=tk.BOTH, expand=True, pady=3)
 
-        ttk.Label(lf2, text="Write freely in Korean or English. The app will auto-generate title, summary bullets, and action items.",
+        ttk.Label(lf2, text="한국어로 자유롭게 작성하세요. 자동으로 제목/요약/조치사항으로 분류됩니다.",
                   font=("Calibri", 8, "italic")).pack(anchor=tk.W)
         self.feedback_text = tk.Text(lf2, height=8, width=90, font=("Calibri", 9))
         self.feedback_text.pack(fill=tk.BOTH, expand=True)
@@ -1056,7 +1024,7 @@ class WeeklyReportApp:
         dlg.transient(self.root)
         dlg.grab_set()
         entries = []
-        for label in ["Issue (title)", "Summary", "Actions"]:
+        for label in ["Issue (제목)", "Summary (요약)", "Actions (조치사항)"]:
             ttk.Label(dlg, text=label + ":").pack(anchor=tk.W, padx=10, pady=(5, 0))
             e = ttk.Entry(dlg, width=70)
             e.pack(padx=10, fill=tk.X)
@@ -1077,7 +1045,7 @@ class WeeklyReportApp:
         self.notebook.add(tab, text="Mileage / Finance")
 
         # Mileage
-        lf1 = ttk.LabelFrame(tab, text="5.4 Vehicle Mileage (values saved between sessions)", padding=10)
+        lf1 = ttk.LabelFrame(tab, text="5.4 Vehicle Mileage (값 자동 저장됨)", padding=10)
         lf1.pack(fill=tk.X, pady=3)
 
         self.mileage_vars = {}
@@ -1098,7 +1066,7 @@ class WeeklyReportApp:
             self.mileage_vars[plate] = {"current": mv, "next_service": nv, "comments": cv}
 
         # Finance
-        lf2 = ttk.LabelFrame(tab, text="5.8 Finance (IQD auto-added, just enter number)", padding=10)
+        lf2 = ttk.LabelFrame(tab, text="5.8 Finance (숫자만 입력, IQD 자동 추가)", padding=10)
         lf2.pack(fill=tk.BOTH, expand=True, pady=3)
 
         self.finance_tree = ttk.Treeview(lf2, columns=("date", "pr", "desc", "amount", "balance"), show="headings", height=5)
@@ -1124,7 +1092,7 @@ class WeeklyReportApp:
         dlg.geometry("500x300")
         dlg.transient(self.root)
         dlg.grab_set()
-        fields = ["Date (e.g. 01 Mar)", "PR/RV Number", "Description (Korean OK)", "Amount (number only, IQD auto)", "Balance (number only, IQD auto)"]
+        fields = ["Date (예: 01 Mar)", "PR/RV Number", "Description (한국어 가능)", "Amount (숫자만, IQD 자동)", "Balance (숫자만, IQD 자동)"]
         entries = []
         for label in fields:
             ttk.Label(dlg, text=label + ":").pack(anchor=tk.W, padx=10, pady=(3, 0))
@@ -1148,16 +1116,24 @@ class WeeklyReportApp:
         except (ValueError, TypeError):
             raise ValueError("Please enter a valid date.")
 
-        # Shifts
+        # Shifts - store full_date for accurate comparison
         shifts = []
+        start = data["period_start"]
         for dv, sv in self.shift_entries:
-            day, shift = dv.get().strip(), sv.get().strip()
-            if day and shift:
-                shifts.append({"date": int(day), "shift": int(shift)})
+            day_str, shift = dv.get().strip(), sv.get().strip()
+            if day_str and shift:
+                day_num = int(day_str)
+                # Determine full date: find which day in the week matches
+                full_date = None
+                for i in range(7):
+                    dd = start + timedelta(days=i)
+                    if dd.day == day_num:
+                        full_date = dd
+                        break
+                shifts.append({"date": day_num, "shift": int(shift), "full_date": full_date})
         data["shift_changes"] = shifts
 
         # Daily extras
-        start = data["period_start"]
         daily_extras = {}
         for i in range(7):
             dd = start + timedelta(days=i)
@@ -1200,7 +1176,7 @@ class WeeklyReportApp:
             finance.append({"date": v[0], "pr_number": v[1], "description": v[2], "amount": v[3], "balance": v[4]})
         data["finance"] = finance
 
-        # Client Feedback - parse free text into structured format
+        # Client Feedback - parse free text
         fb_text = self.feedback_text.get("1.0", tk.END).strip()
         feedback = []
         if fb_text:
@@ -1210,15 +1186,14 @@ class WeeklyReportApp:
         return data
 
     def _parse_client_feedback(self, text):
-        """Parse free-form text into structured Client Feedback entries."""
-        text = translate_ko_to_en(text)
+        """Parse free-form text into structured Client Feedback entries.
+        Translation happens later in translate_all_fields()."""
         lines = [l.strip() for l in text.split("\n") if l.strip()]
         if not lines:
             return []
 
-        # Generate a title from the first line or first sentence
+        # Generate title from first line
         first_line = lines[0]
-        # Try to extract a short title (first phrase or up to first comma/period)
         title_match = re.match(r'^(.{10,50}?)[,.\-]', first_line)
         if title_match:
             title = title_match.group(1).strip()
@@ -1227,22 +1202,15 @@ class WeeklyReportApp:
             if len(first_line) > 50:
                 title += "..."
 
-        # Format as summary bullets
+        # All lines as summary bullets
         summary_lines = []
-        actions_lines = []
         for line in lines:
             if not line.startswith("- "):
                 line = "- " + line
-            # Detect action-oriented lines
-            action_keywords = ["monitor", "prepar", "standby", "ready", "await", "confirm", "ensur", "coordinate", "ready", "alert"]
-            is_action = any(kw in line.lower() for kw in action_keywords)
-            if is_action:
-                actions_lines.append(line)
-            else:
-                summary_lines.append(line)
+            summary_lines.append(line)
 
-        if not actions_lines:
-            actions_lines = ["- Monitoring situation continuously."]
+        # Default action
+        actions_lines = ["- Monitoring situation continuously."]
 
         return [{"issue": title, "summary": "\n".join(summary_lines), "actions": "\n".join(actions_lines)}]
 
@@ -1253,9 +1221,9 @@ class WeeklyReportApp:
             self.root.update()
             data = self._collect_data()
 
-            # AI Translation step
+            # AI Translation step - translate ALL Korean text at once
             if _api_client:
-                self.status_var.set("Translating Korean → English (AI)...")
+                self.status_var.set("Translating Korean → English (AI 개조식 번역 중)...")
                 self.root.update()
                 data = translate_all_fields(data)
 
