@@ -1,0 +1,15 @@
+# API key and config (contains sensitive data)
+weekly_report_config.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
